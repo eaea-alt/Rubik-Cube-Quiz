@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100 select-none">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Rubik's Cube Simulator</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Three.js Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Canvas Confetti for celebration -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            overflow: hidden;
+        }
+        
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .btn-act {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-act:active {
+            transform: scale(0.92);
+        }
+    </style>
+</head>
+<body class="h-full w-full bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden">
+
+    <!-- 3D WebGL Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 z-0 cursor-grab active:cursor-grabbing"></div>
+
+    <!-- 2D Overlay Canvas for Swipe Trajectory Visuals -->
+    <canvas id="gesture-overlay" class="absolute inset-0 z-10 pointer-events-none"></canvas>
+
+    <!-- Floating Top Header HUD & Action Controls -->
+    <header class="relative z-20 p-4 sm:p-6 flex justify-center items-center pointer-events-none">
+        <div class="pointer-events-auto glass-panel px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-3 sm:gap-5 border border-slate-800/80">
+            
+            <!-- Moves Count -->
+            <div class="flex items-center gap-1.5 px-1">
+                <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Moves</span>
+                <span id="hud-moves" class="text-base sm:text-lg font-black text-amber-400 font-mono">0</span>
+            </div>
+
+            <div class="w-px h-5 bg-slate-700/60"></div>
+
+            <!-- Timer -->
+            <div class="flex items-center gap-1.5 px-1">
+                <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Time</span>
+                <span id="hud-timer" class="text-base sm:text-lg font-black font-mono text-cyan-400">00:00</span>
+            </div>
+
+            <div class="w-px h-5 bg-slate-700/60"></div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-2">
+                <!-- Undo Button -->
+                <button id="btn-undo" title="Undo Last Move" class="btn-act p-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-amber-400 transition flex items-center justify-center border border-slate-700/50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                </button>
+
+                <!-- Square View Button -->
+                <button id="btn-square-view" title="Align to Flat Square View" class="btn-act px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-xs font-bold text-sky-400 transition flex items-center gap-1.5 border border-slate-700/50">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2.5"></rect></svg>
+                    <span class="hidden sm:inline">Square View</span>
+                </button>
+
+                <!-- Scramble Button -->
+                <button id="btn-scramble" title="Scramble Cube" class="btn-act px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-black text-white shadow-md transition flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <span>Scramble</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Bottom Instruction Footer -->
+    <footer class="relative z-20 p-4 flex justify-center pointer-events-none">
+        <div class="glass-panel px-4 py-1.5 rounded-full text-[11px] font-bold text-slate-400 tracking-wide flex items-center gap-2 border border-slate-800/60 shadow-lg">
+            <span>Drag face to rotate slice</span>
+            <span class="text-slate-600">•</span>
+            <span>Drag background to orbit</span>
+            <span class="text-slate-600">•</span>
+            <span>Pinch / Scroll to zoom</span>
+        </div>
+    </footer>
+
+    <!-- Win / Completion Result Overlay Modal -->
+    <div id="modal-win" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md hidden transition-opacity duration-300">
+        <div class="glass-panel p-8 rounded-3xl max-w-sm w-full m-4 shadow-2xl text-center border border-amber-500/50 relative overflow-hidden transform transition-transform duration-300 scale-95">
+            
+            <!-- Glow Background Accent -->
+            <div class="absolute -top-20 -left-20 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-20 -right-20 w-40 h-40 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <!-- Trophy Icon -->
+            <div class="w-20 h-20 bg-gradient-to-tr from-amber-500 to-yellow-300 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xl text-slate-950 ring-4 ring-amber-400/20">
+                <svg class="w-12 h-12" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1.323l3.954 1.582 1.599-.8a1 1 0 011.342 1.248l-.8 1.601 1.582 3.953A1 1 0 0118 10v1a1 1 0 01-.293.707l-3.586 3.586V17a1 1 0 01-1 1h-6a1 1 0 01-1-1v-1.707L2.707 11.707A1 1 0 012.414 11V10a1 1 0 01.323-.742l1.582-3.953-.8-1.601a1 1 0 011.342-1.248l1.599.8L10 4.323V3a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
+            </div>
+
+            <!-- COMPLETED Title -->
+            <h2 class="text-3xl font-black text-white tracking-wider mb-1 drop-shadow-sm">COMPLETED!</h2>
+            <p class="text-emerald-400 text-xs font-bold tracking-widest uppercase mb-6">Rubik's Cube Solved Successfully</p>
+            
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <div class="p-3 bg-slate-900/90 rounded-2xl border border-slate-800/80">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">Total Moves</span>
+                    <span id="win-moves" class="text-2xl font-black text-amber-400 font-mono">0</span>
+                </div>
+                <div class="p-3 bg-slate-900/90 rounded-2xl border border-slate-800/80">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">Time Elapsed</span>
+                    <span id="win-time" class="text-2xl font-black font-mono text-cyan-400">00:00</span>
+                </div>
+            </div>
+
+            <!-- Modal Action Buttons -->
+            <div class="flex flex-col gap-2.5">
+                <button id="btn-win-play-again" class="btn-act w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-sm shadow-xl transition">
+                    Play Again
+                </button>
+                <button id="btn-win-scramble" class="btn-act w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700/60">
+                    Scramble New Cube
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Face Colors and Sticker Texture definitions
+        const FACE_COLORS = {
+            px: { hex: 0xd97706, str: '#d97706', name: 'ORANGE' }, // Right (+X)
+            nx: { hex: 0xdc2626, str: '#dc2626', name: 'RED' },    // Left (-X)
+            py: { hex: 0xf8fafc, str: '#f8fafc', name: 'WHITE' },  // Top (+Y)
+            ny: { hex: 0xeab308, str: '#eab308', name: 'YELLOW' }, // Bottom (-Y)
+            pz: { hex: 0x16a34a, str: '#16a34a', name: 'GREEN' },  // Front (+Z)
+            nz: { hex: 0x2563eb, str: '#2563eb', name: 'BLUE' },   // Back (-Z)
+            dark: { hex: 0x18181b, str: '#18181b', name: 'DARK' }  // Core Inner Plastic
+        };
+
+        const STANDARD_MOVES = {
+            'U':  { axis: 'y', slice: 1,  dir: -1 },
+            "U'": { axis: 'y', slice: 1,  dir: 1 },
+            'D':  { axis: 'y', slice: -1, dir: 1 },
+            "D'": { axis: 'y', slice: -1, dir: -1 },
+            'R':  { axis: 'x', slice: 1,  dir: -1 },
+            "R'": { axis: 'x', slice: 1,  dir: 1 },
+            'L':  { axis: 'x', slice: -1, dir: 1 },
+            "L'": { axis: 'x', slice: -1, dir: -1 },
+            'F':  { axis: 'z', slice: 1,  dir: -1 },
+            "F'": { axis: 'z', slice: 1,  dir: 1 },
+            'B':  { axis: 'z', slice: -1, dir: 1 },
+            "B'": { axis: 'z', slice: -1, dir: -1 },
+            'M':  { axis: 'x', slice: 0,  dir: 1 },
+            "M'": { axis: 'x', slice: 0,  dir: -1 },
+            'E':  { axis: 'y', slice: 0,  dir: 1 },
+            "E'": { axis: 'y', slice: 0,  dir: -1 },
+            'S':  { axis: 'z', slice: 0,  dir: -1 },
+            "S'": { axis: 'z', slice: 0,  dir: 1 }
+        };
+
+        // Three.js Core Setup
+        let scene, camera, renderer;
+        let overlayCanvas, overlayCtx;
+        let cubeGroup;
+        let cubies = [];
+        let isAnimating = false;
+        let moveQueue = [];
+        const turnDuration = 180; // ms
+
+        // Gameplay State
+        let moveCount = 0;
+        let timerSeconds = 0;
+        let timerInterval = null;
+        let timerStarted = false;
+        let isSolved = false;
+        let moveHistory = [];
+
+        // Camera Orbit & Zoom Control State
+        let cameraDistance = 9.5;
+        const MIN_CAM_DIST = 4.2;
+        const MAX_CAM_DIST = 16.0;
+        let isOrbitingCamera = false;
+        let lastPointerPos = { x: 0, y: 0 };
+        let cameraVelX = 0;
+        let cameraVelY = 0;
+        let isCameraResetting = false;
+
+        // Touch Pinch Zooming State
+        let isPinching = false;
+        let initialPinchDistance = 0;
+        let initialPinchCamDistance = 9.5;
+
+        // Slice Gesture State
+        let isDraggingCube = false;
+        let dragStartPointer = { x: 0, y: 0 };
+        let currentPointer = { x: 0, y: 0 };
+        let dragCubie = null;
+        let dragFaceNormal = null;
+        let dragIntersectPoint = null;
+        let activeGestureLocked = false;
+
+        // Locked Slice Parameters
+        let lockedAxis = null;         // 'x', 'y', 'z'
+        let lockedSliceIndex = 0;      // -1, 0, 1
+        let lockedPivotGroup = null;
+        let lockedSliceCubies = [];
+        let lockedScreenVector = null;
+        let accumulatedDragAngle = 0;
+
+        // Raycaster
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        function createStickerTexture(colorHexStr) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, 256, 256);
+
+            const pad = 16;
+            const size = 256 - pad * 2;
+            const radius = 32;
+
+            ctx.beginPath();
+            ctx.roundRect(pad, pad, size, size, radius);
+            ctx.fillStyle = colorHexStr;
+            ctx.fill();
+
+            // Inner Specular Radial Glow
+            const grad = ctx.createRadialGradient(128, 128, 10, 128, 128, 120);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.roundRect(pad, pad, size, size, radius);
+            ctx.fill();
+
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.stroke();
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            return texture;
+        }
+
+        const textureCache = {};
+        Object.keys(FACE_COLORS).forEach(key => {
+            textureCache[key] = createStickerTexture(FACE_COLORS[key].str);
+        });
+
+        function initScene() {
+            const container = document.getElementById('canvas-container');
+            overlayCanvas = document.getElementById('gesture-overlay');
+            overlayCtx = overlayCanvas.getContext('2d');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x020617);
+
+            camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 100);
+            
+            // Initial isometric perspective angle
+            const initPos = new THREE.Vector3(5.5, 4.5, 6.5).normalize().multiplyScalar(cameraDistance);
+            camera.position.copy(initPos);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            container.appendChild(renderer.domElement);
+
+            // Lighting Setup
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+            scene.add(ambientLight);
+
+            const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.95);
+            dirLight1.position.set(10, 14, 12);
+            dirLight1.castShadow = true;
+            dirLight1.shadow.mapSize.width = 1024;
+            dirLight1.shadow.mapSize.height = 1024;
+            scene.add(dirLight1);
+
+            const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.45);
+            dirLight2.position.set(-10, -10, -10);
+            scene.add(dirLight2);
+
+            // Drop Shadow Floor Plane
+            const shadowPlaneGeo = new THREE.PlaneGeometry(20, 20);
+            const shadowPlaneMat = new THREE.ShadowMaterial({ opacity: 0.25 });
+            const shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
+            shadowPlane.position.y = -2.8;
+            shadowPlane.rotation.x = -Math.PI / 2;
+            shadowPlane.receiveShadow = true;
+            scene.add(shadowPlane);
+
+            buildRubiksCube();
+            resizeOverlayCanvas();
+
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
+
+        function buildRubiksCube() {
+            if (cubeGroup) scene.remove(cubeGroup);
+            cubeGroup = new THREE.Group();
+            cubies = [];
+
+            const geometry = new THREE.BoxGeometry(0.96, 0.96, 0.96);
+
+            for (let x = -1; x <= 1; x++) {
+                for (let y = -1; y <= 1; y++) {
+                    for (let z = -1; z <= 1; z++) {
+                        const materials = [
+                            new THREE.MeshStandardMaterial({ map: x === 1 ? textureCache.px : textureCache.dark, roughness: 0.2, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ map: x === -1 ? textureCache.nx : textureCache.dark, roughness: 0.2, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ map: y === 1 ? textureCache.py : textureCache.dark, roughness: 0.2, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ map: y === -1 ? textureCache.ny : textureCache.dark, roughness: 0.2, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ map: z === 1 ? textureCache.pz : textureCache.dark, roughness: 0.2, metalness: 0.1 }),
+                            new THREE.MeshStandardMaterial({ map: z === -1 ? textureCache.nz : textureCache.dark, roughness: 0.2, metalness: 0.1 }),
+                        ];
+
+                        const cubie = new THREE.Mesh(geometry, materials);
+                        cubie.position.set(x, y, z);
+                        cubie.castShadow = true;
+                        cubie.receiveShadow = true;
+
+                        cubie.userData = {
+                            origColors: {
+                                px: x === 1 ? 'ORANGE' : 'DARK',
+                                nx: x === -1 ? 'RED' : 'DARK',
+                                py: y === 1 ? 'WHITE' : 'DARK',
+                                ny: y === -1 ? 'YELLOW' : 'DARK',
+                                pz: z === 1 ? 'GREEN' : 'DARK',
+                                nz: z === -1 ? 'BLUE' : 'DARK'
+                            }
+                        };
+
+                        cubeGroup.add(cubie);
+                        cubies.push(cubie);
+                    }
+                }
+            }
+
+            scene.add(cubeGroup);
+        }
+
+        function worldToScreen(worldVec) {
+            const v = worldVec.clone().project(camera);
+            return new THREE.Vector2(
+                (v.x * 0.5 + 0.5) * window.innerWidth,
+                (-(v.y * 0.5) + 0.5) * window.innerHeight
+            );
+        }
+
+        function rotateCameraTrackball(deltaX, deltaY) {
+            if (isCameraResetting) return;
+
+            const speed = 0.006;
+            const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+
+            const qYaw = new THREE.Quaternion().setFromAxisAngle(cameraUp, -deltaX * speed);
+            const qPitch = new THREE.Quaternion().setFromAxisAngle(cameraRight, -deltaY * speed);
+            
+            const qCombined = new THREE.Quaternion().multiplyQuaternions(qYaw, qPitch);
+
+            camera.position.applyQuaternion(qCombined);
+            camera.quaternion.premultiply(qCombined);
+            camera.quaternion.normalize();
+        }
+
+        function updateCameraZoom() {
+            cameraDistance = THREE.MathUtils.clamp(cameraDistance, MIN_CAM_DIST, MAX_CAM_DIST);
+            camera.position.normalize().multiplyScalar(cameraDistance);
+        }
+
+        function getTouchDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function setupInteractionHandlers() {
+            const container = document.getElementById('canvas-container');
+
+            const onPointerDown = (e) => {
+                if (isAnimating) return;
+
+                if (e.touches && e.touches.length === 2) {
+                    isPinching = true;
+                    isOrbitingCamera = false;
+                    isDraggingCube = false;
+                    initialPinchDistance = getTouchDistance(e.touches);
+                    initialPinchCamDistance = cameraDistance;
+                    clearOverlayCanvas();
+                    return;
+                }
+
+                if (e.touches && e.touches.length > 2) return;
+
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                if (clientX === undefined || clientY === undefined) return;
+
+                dragStartPointer = { x: clientX, y: clientY };
+                currentPointer = { x: clientX, y: clientY };
+                lastPointerPos = { x: clientX, y: clientY };
+
+                mouse.x = (clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(cubies);
+
+                if (intersects.length > 0) {
+                    const hit = intersects[0];
+                    dragCubie = hit.object;
+                    dragIntersectPoint = hit.point.clone();
+                    dragFaceNormal = hit.face.normal.clone().applyQuaternion(dragCubie.quaternion).round();
+
+                    isDraggingCube = true;
+                    isOrbitingCamera = false;
+                    activeGestureLocked = false;
+                } else {
+                    isOrbitingCamera = true;
+                    isDraggingCube = false;
+                }
+            };
+
+            const onPointerMove = (e) => {
+                if (isPinching && e.touches && e.touches.length === 2) {
+                    const currentDist = getTouchDistance(e.touches);
+                    if (initialPinchDistance > 0) {
+                        const ratio = initialPinchDistance / currentDist;
+                        cameraDistance = initialPinchCamDistance * ratio;
+                        updateCameraZoom();
+                    }
+                    return;
+                }
+
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                if (clientX === undefined || clientY === undefined) return;
+
+                currentPointer = { x: clientX, y: clientY };
+
+                const dx = clientX - lastPointerPos.x;
+                const dy = clientY - lastPointerPos.y;
+
+                if (isOrbitingCamera) {
+                    cameraVelX = dx;
+                    cameraVelY = dy;
+                    rotateCameraTrackball(dx, dy);
+                } else if (isDraggingCube && dragCubie && !isAnimating) {
+                    const totalDx = clientX - dragStartPointer.x;
+                    const totalDy = clientY - dragStartPointer.y;
+                    const dragDist = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
+
+                    if (!activeGestureLocked && dragDist > 12) {
+                        lockGestureSlice(totalDx, totalDy);
+                    } else if (activeGestureLocked && lockedPivotGroup) {
+                        updateRealtimeSliceRotation(totalDx, totalDy);
+                        drawTrajectoryOverlay();
+                    }
+                }
+
+                lastPointerPos = { x: clientX, y: clientY };
+            };
+
+            const onPointerUp = (e) => {
+                if (isPinching) {
+                    if (!e.touches || e.touches.length < 2) {
+                        isPinching = false;
+                    }
+                    return;
+                }
+
+                if (isOrbitingCamera) {
+                    isOrbitingCamera = false;
+                } else if (activeGestureLocked && lockedPivotGroup) {
+                    finalizeGestureTurn();
+                } else {
+                    resetGestureState();
+                }
+                clearOverlayCanvas();
+            };
+
+            const onWheel = (e) => {
+                e.preventDefault();
+                cameraDistance += e.deltaY * 0.006;
+                updateCameraZoom();
+            };
+
+            container.addEventListener('mousedown', onPointerDown);
+            window.addEventListener('mousemove', onPointerMove);
+            window.addEventListener('mouseup', onPointerUp);
+
+            container.addEventListener('touchstart', onPointerDown, { passive: false });
+            window.addEventListener('touchmove', onPointerMove, { passive: false });
+            window.addEventListener('touchend', onPointerUp);
+            window.addEventListener('touchcancel', onPointerUp);
+
+            container.addEventListener('wheel', onWheel, { passive: false });
+        }
+
+        function lockGestureSlice(dx, dy) {
+            const norm = dragFaceNormal;
+            
+            let tangents = [];
+            if (Math.abs(norm.y) > 0.8) {
+                tangents = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1)];
+            } else if (Math.abs(norm.x) > 0.8) {
+                tangents = [new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
+            } else {
+                tangents = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)];
+            }
+
+            const p0Screen = worldToScreen(dragIntersectPoint);
+            const dragDirScreen = new THREE.Vector2(dx, dy).normalize();
+
+            let bestMatch = null;
+            let maxDot = -Infinity;
+
+            tangents.forEach(t3d => {
+                [1, -1].forEach(sign => {
+                    const candidateT3D = t3d.clone().multiplyScalar(sign);
+                    const p1Screen = worldToScreen(dragIntersectPoint.clone().add(candidateT3D.clone().multiplyScalar(0.5)));
+                    const screenVec = new THREE.Vector2().subVectors(p1Screen, p0Screen).normalize();
+
+                    const dot = dragDirScreen.dot(screenVec);
+                    if (dot > maxDot) {
+                        maxDot = dot;
+                        bestMatch = { tangent3D: candidateT3D, screenVec: screenVec, sign: sign };
+                    }
+                });
+            });
+
+            if (!bestMatch || maxDot < 0.15) return;
+
+            const rotAxis3D = new THREE.Vector3().crossVectors(norm, bestMatch.tangent3D).round();
+            
+            let axisKey = 'x';
+            if (Math.abs(rotAxis3D.y) > 0.8) axisKey = 'y';
+            if (Math.abs(rotAxis3D.z) > 0.8) axisKey = 'z';
+
+            const sliceIndex = Math.round(dragCubie.position[axisKey]);
+
+            lockedAxis = axisKey;
+            lockedSliceIndex = sliceIndex;
+            lockedScreenVector = bestMatch.screenVec;
+            activeGestureLocked = true;
+
+            const eps = 0.1;
+            lockedSliceCubies = cubies.filter(c => Math.abs(c.position[axisKey] - sliceIndex) < eps);
+
+            lockedPivotGroup = new THREE.Group();
+            scene.add(lockedPivotGroup);
+            lockedSliceCubies.forEach(c => lockedPivotGroup.attach(c));
+        }
+
+        function updateRealtimeSliceRotation(dx, dy) {
+            const dragVec = new THREE.Vector2(dx, dy);
+            const projectedDist = dragVec.dot(lockedScreenVector);
+
+            accumulatedDragAngle = (projectedDist / 120) * (Math.PI / 2);
+            lockedPivotGroup.rotation[lockedAxis] = accumulatedDragAngle;
+        }
+
+        function finalizeGestureTurn() {
+            if (!lockedPivotGroup) return;
+
+            isAnimating = true;
+            const currentAngle = lockedPivotGroup.rotation[lockedAxis];
+            const halfPi = Math.PI / 2;
+            
+            let targetAngle = Math.round(currentAngle / halfPi) * halfPi;
+
+            const startAngle = currentAngle;
+            const startTime = performance.now();
+
+            function animateSnap(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / turnDuration, 1);
+                const ease = 1 - Math.pow(1 - progress, 3);
+
+                lockedPivotGroup.rotation[lockedAxis] = startAngle + (targetAngle - startAngle) * ease;
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateSnap);
+                } else {
+                    lockedPivotGroup.rotation[lockedAxis] = targetAngle;
+                    lockedPivotGroup.updateMatrixWorld(true);
+
+                    lockedSliceCubies.forEach(c => {
+                        cubeGroup.attach(c);
+                        c.position.x = Math.round(c.position.x);
+                        c.position.y = Math.round(c.position.y);
+                        c.position.z = Math.round(c.position.z);
+                        snapCubieQuaternion(c);
+                    });
+
+                    scene.remove(lockedPivotGroup);
+
+                    if (Math.abs(targetAngle) >= halfPi * 0.8) {
+                        startTimer();
+                        const turnsCount = Math.abs(Math.round(targetAngle / halfPi));
+                        const moveNotation = formatGestureMoveNotation(lockedAxis, lockedSliceIndex, targetAngle);
+                        for (let i = 0; i < turnsCount; i++) {
+                            recordMove(moveNotation);
+                        }
+                        checkSolvedState();
+                    }
+
+                    resetGestureState();
+                    isAnimating = false;
+                }
+            }
+
+            requestAnimationFrame(animateSnap);
+        }
+
+        function resetGestureState() {
+            isDraggingCube = false;
+            activeGestureLocked = false;
+            lockedPivotGroup = null;
+            lockedSliceCubies = [];
+            dragCubie = null;
+            accumulatedDragAngle = 0;
+        }
+
+        function snapCubieQuaternion(mesh) {
+            const euler = new THREE.Euler().setFromQuaternion(mesh.quaternion, 'XYZ');
+            const halfPi = Math.PI / 2;
+            euler.x = Math.round(euler.x / halfPi) * halfPi;
+            euler.y = Math.round(euler.y / halfPi) * halfPi;
+            euler.z = Math.round(euler.z / halfPi) * halfPi;
+            mesh.quaternion.setFromEuler(euler);
+            mesh.updateMatrix();
+        }
+
+        function formatGestureMoveNotation(axis, slice, angle) {
+            const dir = Math.sign(angle);
+            if (axis === 'x') {
+                if (slice === 1) return dir < 0 ? "R" : "R'";
+                if (slice === -1) return dir > 0 ? "L" : "L'";
+                return dir > 0 ? "M" : "M'";
+            } else if (axis === 'y') {
+                if (slice === 1) return dir < 0 ? "U" : "U'";
+                if (slice === -1) return dir > 0 ? "D" : "D'";
+                return dir > 0 ? "E" : "E'";
+            } else if (axis === 'z') {
+                if (slice === 1) return dir < 0 ? "F" : "F'";
+                if (slice === -1) return dir > 0 ? "B" : "B'";
+                return dir < 0 ? "S" : "S'";
+            }
+            return "U";
+        }
+
+        function drawTrajectoryOverlay() {
+            clearOverlayCanvas();
+            if (!activeGestureLocked || !dragStartPointer) return;
+
+            const p0 = dragStartPointer;
+            const p1 = currentPointer;
+
+            overlayCtx.save();
+            overlayCtx.strokeStyle = '#818cf8';
+            overlayCtx.fillStyle = '#818cf8';
+            overlayCtx.lineWidth = 4;
+            overlayCtx.lineCap = 'round';
+            overlayCtx.shadowColor = '#6366f1';
+            overlayCtx.shadowBlur = 12;
+
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(p0.x, p0.y);
+            overlayCtx.lineTo(p1.x, p1.y);
+            overlayCtx.stroke();
+
+            const angle = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+            const headLen = 14;
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(p1.x, p1.y);
+            overlayCtx.lineTo(p1.x - headLen * Math.cos(angle - Math.PI / 6), p1.y - headLen * Math.sin(angle - Math.PI / 6));
+            overlayCtx.lineTo(p1.x - headLen * Math.cos(angle + Math.PI / 6), p1.y - headLen * Math.sin(angle + Math.PI / 6));
+            overlayCtx.closePath();
+            overlayCtx.fill();
+
+            overlayCtx.restore();
+        }
+
+        function clearOverlayCanvas() {
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+
+        function resizeOverlayCanvas() {
+            overlayCanvas.width = window.innerWidth;
+            overlayCanvas.height = window.innerHeight;
+        }
+
+        function executeMove(moveName, durationOverride = null, isUserMove = true, isUndo = false) {
+            const moveDef = STANDARD_MOVES[moveName];
+            if (!moveDef) return;
+
+            const duration = durationOverride !== null ? durationOverride : turnDuration;
+
+            if (isAnimating) {
+                moveQueue.push({ moveName, durationOverride: duration, isUserMove, isUndo });
+                return;
+            }
+
+            isAnimating = true;
+
+            if (isUserMove && !isUndo) {
+                startTimer();
+                recordMove(moveName);
+            }
+
+            const { axis, slice, dir } = moveDef;
+            const eps = 0.1;
+
+            const sliceCubies = cubies.filter(c => Math.abs(c.position[axis] - slice) < eps);
+
+            const pivot = new THREE.Group();
+            scene.add(pivot);
+
+            sliceCubies.forEach(c => pivot.attach(c));
+
+            const targetAngle = (Math.PI / 2) * dir;
+            const startTime = performance.now();
+
+            function animateSlice(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const ease = 1 - Math.pow(1 - progress, 3);
+                
+                pivot.rotation[axis] = targetAngle * ease;
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateSlice);
+                } else {
+                    pivot.rotation[axis] = targetAngle;
+                    pivot.updateMatrixWorld(true);
+
+                    sliceCubies.forEach(c => {
+                        cubeGroup.attach(c);
+                        c.position.x = Math.round(c.position.x);
+                        c.position.y = Math.round(c.position.y);
+                        c.position.z = Math.round(c.position.z);
+                        snapCubieQuaternion(c);
+                    });
+
+                    scene.remove(pivot);
+                    isAnimating = false;
+
+                    if (isUserMove) checkSolvedState();
+
+                    if (moveQueue.length > 0) {
+                        const next = moveQueue.shift();
+                        executeMove(next.moveName, next.durationOverride, next.isUserMove, next.isUndo);
+                    }
+                }
+            }
+
+            requestAnimationFrame(animateSlice);
+        }
+
+        function recordMove(moveName) {
+            moveCount++;
+            document.getElementById('hud-moves').textContent = moveCount;
+            moveHistory.push(moveName);
+        }
+
+        function undoLastMove() {
+            if (moveHistory.length === 0 || isAnimating) return;
+            const lastMove = moveHistory.pop();
+            const inverseMove = lastMove.endsWith("'") ? lastMove.slice(0, -1) : `${lastMove}'`;
+            
+            moveCount = Math.max(0, moveCount - 1);
+            document.getElementById('hud-moves').textContent = moveCount;
+
+            executeMove(inverseMove, turnDuration, true, true);
+        }
+
+        function checkSolvedState() {
+            if (moveCount === 0 || isSolved) return;
+
+            const faceChecks = [
+                { dir: new THREE.Vector3(1, 0, 0), filter: c => Math.round(c.position.x) === 1 },
+                { dir: new THREE.Vector3(-1, 0, 0), filter: c => Math.round(c.position.x) === -1 },
+                { dir: new THREE.Vector3(0, 1, 0), filter: c => Math.round(c.position.y) === 1 },
+                { dir: new THREE.Vector3(0, -1, 0), filter: c => Math.round(c.position.y) === -1 },
+                { dir: new THREE.Vector3(0, 0, 1), filter: c => Math.round(c.position.z) === 1 },
+                { dir: new THREE.Vector3(0, 0, -1), filter: c => Math.round(c.position.z) === -1 },
+            ];
+
+            const initialVectors = {
+                px: new THREE.Vector3(1, 0, 0),
+                nx: new THREE.Vector3(-1, 0, 0),
+                py: new THREE.Vector3(0, 1, 0),
+                ny: new THREE.Vector3(0, -1, 0),
+                pz: new THREE.Vector3(0, 0, 1),
+                nz: new THREE.Vector3(0, 0, -1)
+            };
+
+            for (const face of faceChecks) {
+                const faceCubies = cubies.filter(face.filter);
+                if (faceCubies.length !== 9) return;
+
+                let faceColor = null;
+
+                for (const cubie of faceCubies) {
+                    let matchedColor = null;
+
+                    for (const key of Object.keys(initialVectors)) {
+                        const origColor = cubie.userData.origColors[key];
+                        if (origColor !== 'DARK') {
+                            const currentNormal = initialVectors[key].clone().applyQuaternion(cubie.quaternion);
+                            if (currentNormal.dot(face.dir) > 0.8) {
+                                matchedColor = origColor;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!matchedColor) return;
+                    if (faceColor === null) {
+                        faceColor = matchedColor;
+                    } else if (faceColor !== matchedColor) {
+                        return;
+                    }
+                }
+            }
+
+            triggerWin();
+        }
+
+        function startTimer() {
+            if (timerStarted) return;
+            timerStarted = true;
+            timerSeconds = 0;
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timerSeconds++;
+                const mins = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
+                const secs = String(timerSeconds % 60).padStart(2, '0');
+                document.getElementById('hud-timer').textContent = `${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+            timerStarted = false;
+        }
+
+        function resetStats() {
+            stopTimer();
+            timerSeconds = 0;
+            moveCount = 0;
+            isSolved = false;
+            moveHistory = [];
+            document.getElementById('hud-moves').textContent = '0';
+            document.getElementById('hud-timer').textContent = '00:00';
+        }
+
+        function scrambleCube() {
+            resetStats();
+            document.getElementById('modal-win').classList.add('hidden');
+            const keys = ['U', "U'", 'D', "D'", 'R', "R'", 'L', "L'", 'F', "F'", 'B', "B'"];
+            const sequence = [];
+            let lastKey = '';
+
+            for (let i = 0; i < 22; i++) {
+                let key;
+                do {
+                    key = keys[Math.floor(Math.random() * keys.length)];
+                } while (key[0] === lastKey[0]);
+                sequence.push(key);
+                lastKey = key;
+            }
+
+            sequence.forEach(m => executeMove(m, 45, false));
+        }
+
+        function triggerWin() {
+            isSolved = true;
+            stopTimer();
+
+            document.getElementById('win-moves').textContent = moveCount;
+            document.getElementById('win-time').textContent = document.getElementById('hud-timer').textContent;
+            
+            const modal = document.getElementById('modal-win');
+            modal.classList.remove('hidden');
+
+            if (typeof confetti === 'function') {
+                confetti({ particleCount: 180, spread: 100, origin: { y: 0.6 } });
+            }
+        }
+
+        function alignSquareView() {
+            if (isCameraResetting) return;
+            isCameraResetting = true;
+
+            cameraDistance = 9.5;
+            
+            // Standard Front facing flat vector (+Z)
+            const frontAxes = [
+                new THREE.Vector3(0, 0, 1),   // Front
+                new THREE.Vector3(0, 0, -1),  // Back
+                new THREE.Vector3(1, 0, 0),   // Right
+                new THREE.Vector3(-1, 0, 0),  // Left
+                new THREE.Vector3(0, 1, 0),   // Top
+                new THREE.Vector3(0, -1, 0)   // Bottom
+            ];
+
+            // Find closest axis to current camera viewing vector
+            const currentDir = camera.position.clone().normalize();
+            let closestAxis = frontAxes[0];
+            let maxDot = -Infinity;
+
+            frontAxes.forEach(axis => {
+                const dot = currentDir.dot(axis);
+                if (dot > maxDot) {
+                    maxDot = dot;
+                    closestAxis = axis;
+                }
+            });
+
+            const endPos = closestAxis.clone().multiplyScalar(cameraDistance);
+            const startPos = camera.position.clone();
+
+            const dummyCam = camera.clone();
+            dummyCam.position.copy(endPos);
+            dummyCam.lookAt(0, 0, 0);
+            
+            // Ensure flat upright alignment
+            if (Math.abs(closestAxis.y) > 0.8) {
+                dummyCam.up.set(0, 0, -Math.sign(closestAxis.y));
+            } else {
+                dummyCam.up.set(0, 1, 0);
+            }
+            dummyCam.lookAt(0, 0, 0);
+
+            const endQuat = dummyCam.quaternion.clone();
+            const startQuat = camera.quaternion.clone();
+
+            const startTime = performance.now();
+            const duration = 320;
+
+            function animateSquareView(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const ease = 1 - Math.pow(1 - progress, 3);
+
+                camera.position.lerpVectors(startPos, endPos, ease);
+                camera.quaternion.slerpQuaternions(startQuat, endQuat, ease);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateSquareView);
+                } else {
+                    camera.position.copy(endPos);
+                    camera.quaternion.copy(endQuat);
+                    isCameraResetting = false;
+                }
+            }
+
+            requestAnimationFrame(animateSquareView);
+        }
+
+        function setupUIEventListeners() {
+            document.getElementById('btn-undo').addEventListener('click', undoLastMove);
+            document.getElementById('btn-scramble').addEventListener('click', scrambleCube);
+            document.getElementById('btn-square-view').addEventListener('click', alignSquareView);
+            
+            document.getElementById('btn-win-play-again').addEventListener('click', () => {
+                document.getElementById('modal-win').classList.add('hidden');
+                scrambleCube();
+            });
+
+            document.getElementById('btn-win-scramble').addEventListener('click', () => {
+                document.getElementById('modal-win').classList.add('hidden');
+                scrambleCube();
+            });
+
+            // Keyboard Shortcuts
+            window.addEventListener('keydown', (e) => {
+                const key = e.key.toUpperCase();
+                const shift = e.shiftKey;
+
+                if (key === 'Z' && !shift) {
+                    undoLastMove();
+                    return;
+                }
+
+                if (key === ' ') {
+                    e.preventDefault();
+                    scrambleCube();
+                    return;
+                }
+
+                if (['U', 'D', 'L', 'R', 'F', 'B'].includes(key)) {
+                    const move = shift ? `${key}'` : key;
+                    executeMove(move, turnDuration, true);
+                }
+            });
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            resizeOverlayCanvas();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Damping trackball momentum
+            if (!isOrbitingCamera && (Math.abs(cameraVelX) > 0.01 || Math.abs(cameraVelY) > 0.01)) {
+                rotateCameraTrackball(cameraVelX, cameraVelY);
+                cameraVelX *= 0.92;
+                cameraVelY *= 0.92;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function() {
+            initScene();
+            setupInteractionHandlers();
+            setupUIEventListeners();
+            scrambleCube();
+        };
+    </script>
+</body>
+</html>
